@@ -1,1 +1,34 @@
 
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local env / secrets
+.env
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Large local speech models (download or provision separately)
+voice/model/
+
+
