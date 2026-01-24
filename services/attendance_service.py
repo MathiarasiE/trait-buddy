@@ -1,140 +1,162 @@
+import sqlite3
 from datetime import datetime
-from db.database import get_conn
+from rules.status_rules import apply_status, INSIDE, OUTSIDE
 
-def mark_attendance(name: str, status: str, reason: str = "", uid: str = None):
-    name = name.strip().lower()
-    status = status.strip().lower()
-    reason = (reason or "").strip()
+DB_PATH = "data/traitbuddy.db"
 
-    now = datetime.now()
-    date = now.strftime("%Y-%m-%d")
-    time = now.strftime("%H:%M:%S")
+def get_conn():
+    return sqlite3.connect(DB_PATH)
 
-    conn = get_conn()
-    cur = conn.cursor()
-
-    cur.execute(
-        "INSERT INTO attendance (uid, name, status, reason, date, time) VALUES (?, ?, ?, ?, ?, ?)",
-        (uid, name, status, reason, date, time)
-    )
-
-    conn.commit()
-    conn.close()
-
-    if status == "absent" and reason:
-        return f"{name} is OUT. Reason: {reason}"
-    elif status == "absent":
-        return f"{name} is OUT."
-    else:
-        return f"{name} is IN."
-
-def who_absent_today():
-    today = datetime.now().strftime("%Y-%m-%d")
-
+# -------------------------
+# Helpers
+# -------------------------
+def get_current_status(name):
     conn = get_conn()
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT a1.name
-        FROM attendance a1
-        JOIN (
-            SELECT name, MAX(id) AS max_id
-            FROM attendance
-            WHERE date = ?
-            GROUP BY name
-        ) a2
-        ON a1.name = a2.name AND a1.id = a2.max_id
-        WHERE a1.status = 'absent'
-        ORDER BY a1.name ASC
-    """, (today,))
-
-    rows = cur.fetchall()
-    conn.close()
-
-    if not rows:
-        return "No one is OUT now."
-    return "Out now: " + ", ".join([r[0] for r in rows])
-
-def who_present_today():
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    conn = get_conn()
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT a1.name
-        FROM attendance a1
-        JOIN (
-            SELECT name, MAX(id) AS max_id
-            FROM attendance
-            WHERE date = ?
-            GROUP BY name
-        ) a2
-        ON a1.name = a2.name AND a1.id = a2.max_id
-        WHERE a1.status = 'present'
-        ORDER BY a1.name ASC
-    """, (today,))
-
-    rows = cur.fetchall()
-    conn.close()
-
-    if not rows:
-        return "No one is IN now."
-    return "In now: " + ", ".join([r[0] for r in rows])
-
-def where_is(name: str):
-    name = name.strip().lower()
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    conn = get_conn()
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT status, reason, time
-        FROM attendance
-        WHERE name = ? AND date = ?
+        SELECT status FROM attendance
+        WHERE name = ?
         ORDER BY id DESC
         LIMIT 1
-    """, (name, today))
+    """, (name,))
 
     row = cur.fetchone()
     conn.close()
 
-    if not row:
-        return f"No status found for {name} today."
+    return row[0] if row else OUTSIDE  # default OUTSIDE
 
-    status, reason, time = row
-    status_word = "IN" if status == "present" else "OUT"
 
-    if reason:
-        return f"{name} is {status_word}. Reason: {reason}"
-    return f"{name} is {status_word}."
+def student_exists(name):
+    conn = get_conn()
+    cur = conn.cursor()
 
-def summary_today():
-    today = datetime.now().strftime("%Y-%m-%d")
+    cur.execute("SELECT 1 FROM students WHERE name = ?", (name,))
+    exists = cur.fetchone() is not None
 
+    conn.close()
+    return exists
+
+
+# -------------------------
+# ACTIONS
+# -------------------------
+def mark_present(name):
+    if not student_exists(name):
+        return f"I don't know {name}."
+
+    current = get_current_status(name)
+    new_status = apply_status(current, "MARK_PRESENT")
+
+    if new_status is None:
+        return f"{name.capitalize()} is already inside."
+
+    now = datetime.now()
     conn = get_conn()
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT a1.name, a1.status
-        FROM attendance a1
-        JOIN (
-            SELECT name, MAX(id) AS max_id
-            FROM attendance
-            WHERE date = ?
-            GROUP BY name
-        ) a2
-        ON a1.name = a2.name AND a1.id = a2.max_id
-    """, (today,))
+        INSERT INTO attendance (name, status, date, time)
+        VALUES (?, ?, ?, ?)
+    """, (
+        name,
+        new_status,
+        now.strftime("%Y-%m-%d"),
+        now.strftime("%H:%M:%S")
+    ))
 
-    rows = cur.fetchall()
+    conn.commit()
     conn.close()
 
-    if not rows:
-        return "No attendance data for today."
+    return f"{name.capitalize()} is marked present and is now inside."
 
-    present = [n for n, s in rows if s == "present"]
-    absent = [n for n, s in rows if s == "absent"]
 
-    return f"Today summary. In: {len(present)}. Out: {len(absent)}."
+def mark_absent(name):
+    if not student_exists(name):
+        return f"I don't know {name}."
+
+    current = get_current_status(name)
+    new_status = apply_status(current, "MARK_ABSENT")
+
+    if new_status is None:
+        return f"{name.capitalize()} is already outside."
+
+    now = datetime.now()
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO attendance (name, status, date, time)
+        VALUES (?, ?, ?, ?)
+    """, (
+        name,
+        new_status,
+        now.strftime("%Y-%m-%d"),
+        now.strftime("%H:%M:%S")
+    ))
+
+    conn.commit()
+    conn.close()
+
+    return f"{name.capitalize()} has been marked absent and is now outside."
+
+
+# -------------------------
+# QUERIES
+# -------------------------
+def who_present_today():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    cur.execute("""
+        SELECT DISTINCT name FROM attendance
+        WHERE date = ? AND status = ?
+    """, (today, INSIDE))
+
+    names = [r[0] for r in cur.fetchall()]
+    conn.close()
+
+    if not names:
+        return "No one is inside today."
+
+    return "Inside today: " + ", ".join(n.capitalize() for n in names)
+
+
+def who_absent_today():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    cur.execute("""
+        SELECT name FROM students
+        WHERE name NOT IN (
+            SELECT name FROM attendance
+            WHERE date = ? AND status = ?
+        )
+    """, (today, INSIDE))
+
+    names = [r[0] for r in cur.fetchall()]
+    conn.close()
+
+    if not names:
+        return "Everyone is present today."
+
+    return "Absent today: " + ", ".join(n.capitalize() for n in names)
+
+
+def where_is(name):
+    status = get_current_status(name)
+
+    if status == INSIDE:
+        return f"{name.capitalize()} is inside."
+    else:
+        return f"{name.capitalize()} is outside."
+
+
+def summary_today():
+    inside = who_present_today()
+    absent = who_absent_today()
+    return f"{inside}. {absent}."
