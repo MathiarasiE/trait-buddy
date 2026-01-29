@@ -1,4 +1,7 @@
 from rapidfuzz import process, fuzz
+import sqlite3
+
+DB_PATH = "data/traitbuddy.db"
 
 def match_name(spoken_name: str, known_names: list, threshold=80):
     """
@@ -22,3 +25,13 @@ def match_name(spoken_name: str, known_names: list, threshold=80):
         return best_name, score
 
     return None, score
+
+def get_all_student_names():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("SELECT name FROM students")
+    names = [row[0] for row in cur.fetchall()]
+
+    conn.close()
+    return names
