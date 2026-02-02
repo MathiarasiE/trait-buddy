@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import sqlite3
+import psycopg2
 from typing import Iterable, Optional, Sequence, Tuple
 
 from db.database import get_conn, init_db
@@ -13,7 +13,7 @@ def get_name_from_uid(uid: str) -> Optional[str]:
 
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("SELECT name FROM students WHERE uid = ? LIMIT 1", (uid,))
+    cur.execute("SELECT name FROM students WHERE uid = %s LIMIT 1", (uid,))
     row = cur.fetchone()
     conn.close()
     return row[0] if row else None
@@ -34,31 +34,22 @@ def upsert_student(name: str, uid: str, program: str | None = None) -> None:
     conn = get_conn()
     cur = conn.cursor()
 
-    # Prefer an UPSERT (SQLite >= 3.24). Fall back to SELECT+UPDATE for older builds.
+    # Use PostgreSQL UPSERT with ON CONFLICT
     try:
         cur.execute(
             """
             INSERT INTO students (name, uid, program)
-            VALUES (?, ?, ?)
+            VALUES (%s, %s, %s)
             ON CONFLICT(name) DO UPDATE SET
-                uid = excluded.uid,
-                program = excluded.program
+                uid = EXCLUDED.uid,
+                program = EXCLUDED.program
             """,
             (name, uid, program),
         )
-    except sqlite3.OperationalError:
-        cur.execute("SELECT id FROM students WHERE name = ? LIMIT 1", (name,))
-        existing = cur.fetchone()
-        if existing:
-            cur.execute(
-                "UPDATE students SET uid = ?, program = ? WHERE name = ?",
-                (uid, program, name),
-            )
-        else:
-            cur.execute(
-                "INSERT INTO students (name, uid, program) VALUES (?, ?, ?)",
-                (name, uid, program),
-            )
+    except psycopg2.Error as e:
+        conn.rollback()
+        conn.close()
+        raise
 
     conn.commit()
     conn.close()

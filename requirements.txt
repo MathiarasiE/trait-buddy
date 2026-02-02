@@ -3,3 +3,5 @@ sounddevice==0.4.6
 numpy==1.26.4
 pyttsx3==2.90
 rapidfuzz
+psycopg2-binary
+python-dotenv

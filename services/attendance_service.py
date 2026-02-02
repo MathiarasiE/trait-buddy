@@ -1,11 +1,6 @@
-import sqlite3
 from datetime import datetime
 from rules.status_rules import apply_status, INSIDE, OUTSIDE
-
-DB_PATH = "data/traitbuddy.db"
-
-def get_conn():
-    return sqlite3.connect(DB_PATH)
+from db.database import get_conn
 
 # -------------------------
 # Helpers
@@ -16,7 +11,7 @@ def get_current_status(name):
 
     cur.execute("""
         SELECT status FROM attendance
-        WHERE name = ?
+        WHERE name = %s
         ORDER BY id DESC
         LIMIT 1
     """, (name,))
@@ -31,7 +26,7 @@ def student_exists(name):
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("SELECT 1 FROM students WHERE name = ?", (name,))
+    cur.execute("SELECT 1 FROM students WHERE name = %s", (name,))
     exists = cur.fetchone() is not None
 
     conn.close()
@@ -57,7 +52,7 @@ def mark_present(name):
 
     cur.execute("""
         INSERT INTO attendance (name, status, date, time)
-        VALUES (?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s)
     """, (
         name,
         new_status,
@@ -87,7 +82,7 @@ def mark_absent(name):
 
     cur.execute("""
         INSERT INTO attendance (name, status, date, time)
-        VALUES (?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s)
     """, (
         name,
         new_status,
@@ -112,7 +107,7 @@ def who_present_today():
 
     cur.execute("""
         SELECT DISTINCT name FROM attendance
-        WHERE date = ? AND status = ?
+        WHERE date = %s AND status = %s
     """, (today, INSIDE))
 
     names = [r[0] for r in cur.fetchall()]
@@ -134,7 +129,7 @@ def who_absent_today():
         SELECT name FROM students
         WHERE name NOT IN (
             SELECT name FROM attendance
-            WHERE date = ? AND status = ?
+            WHERE date = %s AND status = %s
         )
     """, (today, INSIDE))
 

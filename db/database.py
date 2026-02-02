@@ -1,9 +1,21 @@
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import os
+from dotenv import load_dotenv
 
-DB_PATH = "data/traitbuddy.db"
+load_dotenv()
+
+# PostgreSQL connection parameters from environment variables
+DB_CONFIG = {
+    'dbname': os.getenv('DB_NAME', 'traitbuddy'),
+    'user': os.getenv('DB_USER', 'postgres'),
+    'password': os.getenv('DB_PASSWORD', 'postgres'),
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'port': os.getenv('DB_PORT', '5432')
+}
 
 def get_conn():
-    return sqlite3.connect(DB_PATH)
+    return psycopg2.connect(**DB_CONFIG)
 
 def init_db():
     conn = get_conn()
@@ -11,22 +23,25 @@ def init_db():
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS students (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
         uid TEXT,
         program TEXT
     )
     """)
 
-    # Lightweight migration for older DBs created before the `program` column existed.
-    cur.execute("PRAGMA table_info(students)")
-    existing_cols = {row[1] for row in cur.fetchall()}  # row[1] == column name
-    if "program" not in existing_cols:
+    # Check if program column exists (for migration)
+    cur.execute("""
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'students' AND column_name = 'program'
+    """)
+    if not cur.fetchone():
         cur.execute("ALTER TABLE students ADD COLUMN program TEXT")
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS attendance (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         uid TEXT,
         name TEXT NOT NULL,
         status TEXT NOT NULL,
