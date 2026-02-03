@@ -24,30 +24,63 @@ def init_db():
     cur.execute("""
     CREATE TABLE IF NOT EXISTS students (
         id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL UNIQUE,
-        uid TEXT,
-        program TEXT
+        name VARCHAR(255) NOT NULL,
+        uid VARCHAR(50) NOT NULL UNIQUE,
+        program VARCHAR(100),
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
 
-    # Check if program column exists (for migration)
     cur.execute("""
-        SELECT column_name 
-        FROM information_schema.columns 
-        WHERE table_name = 'students' AND column_name = 'program'
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'attendance_status') THEN
+            CREATE TYPE attendance_status AS ENUM ('INSIDE', 'OUTSIDE');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'activity_type') THEN
+            CREATE TYPE activity_type AS ENUM ('VOICE_COMMAND', 'RFID');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'project_status') THEN
+            CREATE TYPE project_status AS ENUM ('ONGOING');
+        END IF;
+    END$$;
     """)
-    if not cur.fetchone():
-        cur.execute("ALTER TABLE students ADD COLUMN program TEXT")
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS attendance (
         id SERIAL PRIMARY KEY,
-        uid TEXT,
-        name TEXT NOT NULL,
-        status TEXT NOT NULL,
+        student_id INTEGER NOT NULL
+            REFERENCES students(id) ON DELETE CASCADE,
+        status attendance_status NOT NULL,
+        activity_type activity_type DEFAULT 'VOICE_COMMAND',
         reason TEXT,
-        date TEXT NOT NULL,
-        time TEXT NOT NULL
+        timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS attendance_summary (
+        id SERIAL PRIMARY KEY,
+        student_id INTEGER NOT NULL
+            REFERENCES students(id) ON DELETE CASCADE,
+        date DATE NOT NULL,
+        inside_count INTEGER DEFAULT 0,
+        outside_count INTEGER DEFAULT 0,
+        last_status attendance_status,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (student_id, date)
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS rfid_cards (
+        id SERIAL PRIMARY KEY,
+        uid VARCHAR(50) UNIQUE NOT NULL,
+        user_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+        is_active BOOLEAN DEFAULT TRUE,
+        registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
 

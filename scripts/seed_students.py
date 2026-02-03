@@ -38,7 +38,7 @@ def main() -> None:
     ]
 
     processed = bulk_upsert_students(students)
-    print(f"Seeded {processed} students into data/traitbuddy.db")
+    print(f"Seeded {processed} students into PostgreSQL")
 
 
 if __name__ == "__main__":

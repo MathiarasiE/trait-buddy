@@ -13,7 +13,7 @@ def get_name_from_uid(uid: str) -> Optional[str]:
 
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("SELECT name FROM students WHERE uid = %s LIMIT 1", (uid,))
+    cur.execute("SELECT name FROM students WHERE uid = %s AND is_active = TRUE LIMIT 1", (uid,))
     row = cur.fetchone()
     conn.close()
     return row[0] if row else None
@@ -34,15 +34,17 @@ def upsert_student(name: str, uid: str, program: str | None = None) -> None:
     conn = get_conn()
     cur = conn.cursor()
 
-    # Use PostgreSQL UPSERT with ON CONFLICT
+    # Use PostgreSQL UPSERT with ON CONFLICT (uid is unique)
     try:
         cur.execute(
             """
             INSERT INTO students (name, uid, program)
             VALUES (%s, %s, %s)
-            ON CONFLICT(name) DO UPDATE SET
-                uid = EXCLUDED.uid,
-                program = EXCLUDED.program
+            ON CONFLICT(uid) DO UPDATE SET
+                name = EXCLUDED.name,
+                program = EXCLUDED.program,
+                is_active = TRUE,
+                updated_at = CURRENT_TIMESTAMP
             """,
             (name, uid, program),
         )
@@ -70,7 +72,7 @@ def get_all_student_names() -> Sequence[str]:
     init_db()
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("SELECT name FROM students ORDER BY name ASC")
+    cur.execute("SELECT name FROM students WHERE is_active = TRUE ORDER BY name ASC")
     rows = cur.fetchall()
     conn.close()
     return [r[0] for r in rows]

@@ -1,20 +1,39 @@
 from datetime import datetime
 from rules.status_rules import apply_status, INSIDE, OUTSIDE
-from db.database import get_conn
+from db.database import get_conn, init_db
 
 # -------------------------
 # Helpers
 # -------------------------
-def get_current_status(name):
+def get_student_id(name):
+    name = (name or "").strip().lower()
+    if not name:
+        return None
+
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id FROM students WHERE name = %s AND is_active = TRUE LIMIT 1",
+        (name,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def get_current_status(student_id):
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("""
+    cur.execute(
+        """
         SELECT status FROM attendance
-        WHERE name = %s
-        ORDER BY id DESC
+        WHERE student_id = %s
+        ORDER BY timestamp DESC
         LIMIT 1
-    """, (name,))
+        """,
+        (student_id,),
+    )
 
     row = cur.fetchone()
     conn.close()
@@ -22,43 +41,36 @@ def get_current_status(name):
     return row[0] if row else OUTSIDE  # default OUTSIDE
 
 
-def student_exists(name):
-    conn = get_conn()
-    cur = conn.cursor()
-
-    cur.execute("SELECT 1 FROM students WHERE name = %s", (name,))
-    exists = cur.fetchone() is not None
-
-    conn.close()
-    return exists
-
-
 # -------------------------
 # ACTIONS
 # -------------------------
-def mark_present(name):
-    if not student_exists(name):
+def mark_present(name, activity_type="VOICE_COMMAND", reason=None):
+    init_db()
+    student_id = get_student_id(name)
+    if not student_id:
         return f"I don't know {name}."
 
-    current = get_current_status(name)
+    current = get_current_status(student_id)
     new_status = apply_status(current, "MARK_PRESENT")
 
     if new_status is None:
         return f"{name.capitalize()} is already inside."
 
-    now = datetime.now()
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("""
-        INSERT INTO attendance (name, status, date, time)
+    cur.execute(
+        """
+        INSERT INTO attendance (student_id, status, activity_type, reason)
         VALUES (%s, %s, %s, %s)
-    """, (
-        name,
-        new_status,
-        now.strftime("%Y-%m-%d"),
-        now.strftime("%H:%M:%S")
-    ))
+        """,
+        (
+            student_id,
+            new_status,
+            activity_type,
+            reason,
+        ),
+    )
 
     conn.commit()
     conn.close()
@@ -66,29 +78,33 @@ def mark_present(name):
     return f"{name.capitalize()} is marked present and is now inside."
 
 
-def mark_absent(name):
-    if not student_exists(name):
+def mark_absent(name, activity_type="VOICE_COMMAND", reason=None):
+    init_db()
+    student_id = get_student_id(name)
+    if not student_id:
         return f"I don't know {name}."
 
-    current = get_current_status(name)
+    current = get_current_status(student_id)
     new_status = apply_status(current, "MARK_ABSENT")
 
     if new_status is None:
         return f"{name.capitalize()} is already outside."
 
-    now = datetime.now()
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("""
-        INSERT INTO attendance (name, status, date, time)
+    cur.execute(
+        """
+        INSERT INTO attendance (student_id, status, activity_type, reason)
         VALUES (%s, %s, %s, %s)
-    """, (
-        name,
-        new_status,
-        now.strftime("%Y-%m-%d"),
-        now.strftime("%H:%M:%S")
-    ))
+        """,
+        (
+            student_id,
+            new_status,
+            activity_type,
+            reason,
+        ),
+    )
 
     conn.commit()
     conn.close()
@@ -100,15 +116,21 @@ def mark_absent(name):
 # QUERIES
 # -------------------------
 def who_present_today():
+    init_db()
     conn = get_conn()
     cur = conn.cursor()
 
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    cur.execute("""
-        SELECT DISTINCT name FROM attendance
-        WHERE date = %s AND status = %s
-    """, (today, INSIDE))
+    cur.execute(
+        """
+        SELECT DISTINCT s.name
+        FROM attendance a
+        JOIN students s ON s.id = a.student_id
+        WHERE DATE(a.timestamp) = CURRENT_DATE
+          AND a.status = %s
+          AND s.is_active = TRUE
+        """,
+        (INSIDE,),
+    )
 
     names = [r[0] for r in cur.fetchall()]
     conn.close()
@@ -120,18 +142,24 @@ def who_present_today():
 
 
 def who_absent_today():
+    init_db()
     conn = get_conn()
     cur = conn.cursor()
 
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    cur.execute("""
-        SELECT name FROM students
-        WHERE name NOT IN (
-            SELECT name FROM attendance
-            WHERE date = %s AND status = %s
-        )
-    """, (today, INSIDE))
+    cur.execute(
+        """
+        SELECT s.name
+        FROM students s
+        WHERE s.is_active = TRUE
+          AND s.id NOT IN (
+              SELECT a.student_id
+              FROM attendance a
+              WHERE DATE(a.timestamp) = CURRENT_DATE
+                AND a.status = %s
+          )
+        """,
+        (INSIDE,),
+    )
 
     names = [r[0] for r in cur.fetchall()]
     conn.close()
@@ -143,7 +171,11 @@ def who_absent_today():
 
 
 def where_is(name):
-    status = get_current_status(name)
+    student_id = get_student_id(name)
+    if not student_id:
+        return f"I don't know {name}."
+
+    status = get_current_status(student_id)
 
     if status == INSIDE:
         return f"{name.capitalize()} is inside."

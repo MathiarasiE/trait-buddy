@@ -1,16 +1,20 @@
 from services.attendance_service import mark_present, mark_absent
-from db.students import get_name_from_uid
+from db.rfid_cards import get_user_from_uid
 
 def handle_rfid_event(uid: str, action: str, reason: str = ""):
     """
     action: 'in' or 'out'
     """
-    name = get_name_from_uid(uid)
+    user = get_user_from_uid(uid)
 
-    if not name:
+    if not user:
         return f"Unknown RFID card: {uid}. Please register this UID."
 
+    name = user["name"]
+
     if action.lower() == "in":
-        return mark_present(name)
+        mark_present(name, activity_type="RFID", reason=reason or None)
+        return f"{name} marked present."
     else:
-        return mark_absent(name)
+        mark_absent(name, activity_type="RFID", reason=reason or None)
+        return f"{name} marked absent."
