@@ -32,7 +32,8 @@ def listen_whisper(seconds=4):
         vad_filter=True,  # ✅ remove silence
         initial_prompt=(
             "This is a voice command for an assistant named Trait Buddy. "
-            "Commands include mark present, mark absent, attendance, student names."
+            "Commands include mark present, mark absent, attendance, student names, "
+            "trait center info, guest welcome note, and ongoing projects."
         )
     )
 

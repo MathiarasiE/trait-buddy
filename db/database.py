@@ -84,5 +84,51 @@ def init_db():
     )
     """)
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS guests (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        designation VARCHAR(255),
+        organization VARCHAR(255),
+        visit_purpose TEXT,
+        welcome_note TEXT NOT NULL,
+        visit_date DATE DEFAULT CURRENT_DATE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS trait_info (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        description TEXT NOT NULL,
+        vision TEXT,
+        mission TEXT,
+        location VARCHAR(255),
+        contact_email VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS projects (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        domain VARCHAR(100),
+        status project_status DEFAULT 'ONGOING',
+        mentor VARCHAR(255),
+        start_date DATE,
+        end_date DATE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_students_uid ON students(uid)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_students_active ON students(is_active)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_attendance_student_id ON attendance(student_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_attendance_timestamp ON attendance(timestamp)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_attendance_status ON attendance(status)")
+
     conn.commit()
     conn.close()

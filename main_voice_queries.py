@@ -11,6 +11,12 @@ from services.attendance_service import (
     where_is,
     summary_today
 )
+from services.info_service import (
+    get_trait_response,
+    get_guest_welcome_note,
+    get_projects_summary,
+    get_project_details,
+)
 
 # --------------------
 # Wake word detection
@@ -64,6 +70,25 @@ def run_query(cmd_text: str) -> str:
 
     if intent == "SUMMARY":
         return summary_today()
+
+    # -------- TRAIT INFO --------
+    if intent == "TRAIT_INFO":
+        field = parsed.get("field")
+        return get_trait_response(field)
+
+    # -------- GUEST INFO --------
+    if intent == "GUEST_WELCOME":
+        return get_guest_welcome_note(parsed.get("name"))
+
+    # -------- PROJECTS --------
+    if intent == "PROJECTS_LIST":
+        return get_projects_summary()
+
+    if intent == "PROJECT_DETAILS":
+        title = parsed.get("title")
+        if title:
+            return get_project_details(title)
+        return get_projects_summary()
 
     # -------- STATUS CHANGES (RULES) --------
     if intent == "MARK_PRESENT" and resolved_name:
