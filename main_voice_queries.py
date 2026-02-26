@@ -1,6 +1,7 @@
 from voice.listen_whisper import listen_whisper
 from voice.speak import speak
 from services.name_matcher import get_all_student_names, match_name
+from services.ai_service import get_ai_response
 
 from services.parser import parse_command
 from services.attendance_service import (
@@ -27,6 +28,16 @@ def is_wake_word(text: str) -> bool:
         "hey buddy" in t or
         (("hey" in t or "hi" in t) and ("buddy" in t or "body" in t))
     )
+
+def is_ai_mode_trigger(text: str) -> bool:
+    t = text.lower()
+    return (
+        "ai mode" in t or
+        "turn on ai mode" in t or
+        "enter ai mode" in t or
+        "start ai" in t
+    )
+
 
 # --------------------
 # Command router (RULE ENGINE ENTRY)
@@ -105,12 +116,28 @@ def run_query(cmd_text: str) -> str:
 # --------------------
 def main():
     speak("Buddy query mode ready. Say hey buddy.")
+    ai_mode = False
 
     while True:
         wake = listen_whisper(seconds=3)
         print("🎧 Heard:", wake)
 
         if not wake.strip():
+            continue
+
+        if is_ai_mode_trigger(wake):
+            ai_mode = True
+            speak("AI mode activated. Ask me anything.")
+            continue
+
+        if ai_mode:
+            if "exit" in wake.lower() or "stop" in wake.lower():
+                ai_mode = False
+                speak("AI mode deactivated.")
+                continue
+            
+            response = get_ai_response(wake)
+            speak(response)
             continue
 
         if is_wake_word(wake):

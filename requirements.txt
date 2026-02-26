@@ -5,3 +5,6 @@ pyttsx3==2.90
 rapidfuzz
 psycopg2-binary
 python-dotenv
+requests
+flask
+google-generativeai
