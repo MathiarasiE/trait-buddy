@@ -1,9 +1,15 @@
 import pyttsx3
 
-engine = pyttsx3.init()
+try:
+    engine = pyttsx3.init(driverName='espeak')
+except:
+    engine = pyttsx3.init()
 engine.setProperty("rate", 170)
 
 def speak(text):
     print("🗣️ TRAIT Buddy:", text)
-    engine.say(text)
-    engine.runAndWait()
+    try:
+        engine.say(text)
+        engine.runAndWait()
+    except Exception as e:
+        print(f"❌ Speech error: {e}")
