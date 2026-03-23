@@ -19,6 +19,24 @@ from services.info_service import (
     get_project_details,
 )
 
+import sounddevice as sd
+
+# ? FORCE BLUETOOTH MIC (IMPORTANT)
+def setup_audio():
+    devices = sd.query_devices()
+    bt_index = None
+
+    for i, dev in enumerate(devices):
+        if "bluez" in dev["name"].lower():
+            bt_index = i
+            print(f"? Bluetooth mic found: {dev['name']} (index {i})")
+            break
+
+    if bt_index is not None:
+        sd.default.device = (bt_index, None)
+    else:
+        print("?? Bluetooth mic not found, using default")
+
 # --------------------
 # Wake word detection
 # --------------------
@@ -38,9 +56,8 @@ def is_ai_mode_trigger(text: str) -> bool:
         "start ai" in t
     )
 
-
 # --------------------
-# Command router (RULE ENGINE ENTRY)
+# Command router
 # --------------------
 def run_query(cmd_text: str) -> str:
     parsed = parse_command(cmd_text)
@@ -52,24 +69,14 @@ def run_query(cmd_text: str) -> str:
     spoken_name = parsed.get("name")
 
     resolved_name = None
-    confidence = 0
 
-    # -------- FUZZY NAME RESOLUTION --------
     if spoken_name:
-        known_names = get_all_student_names()   # from DB
-        resolved_name, confidence = match_name(spoken_name, known_names)
+        known_names = get_all_student_names()
+        resolved_name, _ = match_name(spoken_name, known_names)
 
         if not resolved_name:
             return f"I couldn't find a student named {spoken_name}."
 
-        # OPTIONAL confirmation (enable later if you want)
-        # if confidence < 90:
-        #     speak(f"Did you mean {resolved_name}?")
-        #     confirm = listen_whisper(seconds=3).lower()
-        #     if "yes" not in confirm:
-        #         return "Okay, please say the name again."
-
-    # -------- STATUS QUERIES --------
     if intent == "WHO_PRESENT":
         return who_present_today()
 
@@ -82,45 +89,39 @@ def run_query(cmd_text: str) -> str:
     if intent == "SUMMARY":
         return summary_today()
 
-    # -------- TRAIT INFO --------
     if intent == "TRAIT_INFO":
-        field = parsed.get("field")
-        return get_trait_response(field)
+        return get_trait_response(parsed.get("field"))
 
-    # -------- GUEST INFO --------
     if intent == "GUEST_WELCOME":
         return get_guest_welcome_note(parsed.get("name"))
 
-    # -------- PROJECTS --------
     if intent == "PROJECTS_LIST":
         return get_projects_summary()
 
     if intent == "PROJECT_DETAILS":
         title = parsed.get("title")
-        if title:
-            return get_project_details(title)
-        return get_projects_summary()
+        return get_project_details(title) if title else get_projects_summary()
 
-    # -------- STATUS CHANGES (RULES) --------
     if intent == "MARK_PRESENT" and resolved_name:
-        return mark_present(resolved_name)   # → INSIDE
+        return mark_present(resolved_name)
 
     if intent == "MARK_ABSENT" and resolved_name:
-        return mark_absent(resolved_name)    # → OUTSIDE
+        return mark_absent(resolved_name)
 
     return "Sorry, I didn't understand."
-
 
 # --------------------
 # Main loop
 # --------------------
 def main():
+    setup_audio()  # ?? IMPORTANT LINE
+
     speak("Buddy query mode ready. Say hey buddy.")
     ai_mode = False
 
     while True:
         wake = listen_whisper(seconds=3)
-        print("🎧 Heard:", wake)
+        print("?? Heard:", wake)
 
         if not wake.strip():
             continue
@@ -135,7 +136,7 @@ def main():
                 ai_mode = False
                 speak("AI mode deactivated.")
                 continue
-            
+
             response = get_ai_response(wake)
             speak(response)
             continue
@@ -143,7 +144,7 @@ def main():
         if is_wake_word(wake):
             speak("Yes. Ask your question.")
             cmd = listen_whisper(seconds=5)
-            print("📝 Query:", cmd)
+            print("?? Query:", cmd)
 
             if not cmd.strip():
                 speak("I didn't hear the question.")

@@ -1,51 +1,94 @@
 import numpy as np
-
 import sounddevice as sd
 from faster_whisper import WhisperModel
+from scipy.signal import resample
 
-SAMPLE_RATE = 48000
+# ===============================
+# Audio Settings
+# ===============================
+INPUT_RATE = 48000
+WHISPER_RATE = 16000
 
-# 🔥 Use SMALL or MEDIUM for better pronunciation
+# ===============================
+# Auto-detect Bluetooth mic
+# ===============================
+def get_bt_mic_index():
+    devices = sd.query_devices()
+
+    for i, dev in enumerate(devices):
+        if "bluez" in dev["name"].lower() and dev["max_input_channels"] > 0:
+            print(f"? Using Bluetooth mic: {dev['name']} (index {i})")
+            return i
+
+    print("?? Bluetooth mic not found, using default")
+    return None
+
+
+MIC_DEVICE = get_bt_mic_index()
+
+# ===============================
+# Load Whisper Model
+# ===============================
 model = WhisperModel(
-    "tiny.en",          # upgrade from base
+    "tiny.en",
     device="cpu",
     compute_type="int8"
 )
 
-SAMPLE_RATE = 48000
+# ===============================
+# Record Audio
+# ===============================
+def record(seconds=3):
 
-def record(seconds=4):
-    print(f"?? Recording {seconds}s...")
+    print(f"??? Recording {seconds}s...")
+
     try:
         audio = sd.rec(
-            int(seconds * SAMPLE_RATE),
-            samplerate=SAMPLE_RATE,
-            channels=2,
-            dtype="float32"   # ?? IMPORTANT CHANGE
+            int(seconds * INPUT_RATE),
+            samplerate=INPUT_RATE,
+            channels=1,
+            dtype="float32",
+            device=MIC_DEVICE
         )
+
         sd.wait()
-        return audio.flatten()
+
+        audio = audio.flatten()
+
+        # Convert 48k ? 16k
+        num_samples = int(len(audio) * WHISPER_RATE / INPUT_RATE)
+        audio = resample(audio, num_samples)
+
+        return audio
+
     except Exception as e:
-        print(f"? Audio error: {e}")
-        return np.zeros(int(seconds * SAMPLE_RATE), dtype="float32")
-        
-def listen_whisper(seconds=4):
+        print("Audio error:", e)
+        return np.zeros(int(seconds * WHISPER_RATE), dtype="float32")
+
+# ===============================
+# Whisper transcription
+# ===============================
+def listen_whisper(seconds=3):
+
     audio = record(seconds)
-    print("Max audio level:", np.max(np.abs(audio)))
-    if np.max(np.abs(audio)) < 0.01:
+
+    max_level = np.max(np.abs(audio))
+    print("Max audio level:", max_level)
+
+    # ignore silence
+    if max_level < 0.002:
         return ""
 
-    segments, info = model.transcribe(
-        audio,
-        language="en",   # ✅ FORCE language
-        beam_size=5,
-        vad_filter=True,  # ✅ remove silence
-        initial_prompt=(
-            "This is a voice command for an assistant named Trait Buddy. "
-            "Commands include mark present, mark absent, attendance, student names, "
-            "trait center info, guest welcome note, and ongoing projects."
+    try:
+        segments, _ = model.transcribe(
+            audio,
+            beam_size=5,
+            vad_filter=True
         )
-    )
 
-    text = " ".join(seg.text.strip() for seg in segments).strip()
-    return text
+        text = "".join(seg.text for seg in segments)
+        return text.strip()
+
+    except Exception as e:
+        print("Whisper error:", e)
+        return ""
