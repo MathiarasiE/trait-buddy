@@ -2,6 +2,7 @@ from voice.listen_whisper import listen_whisper
 from voice.speak import speak
 from services.name_matcher import get_all_student_names, match_name
 from services.ai_service import get_ai_response
+from datetime import datetime
 
 from services.parser import parse_command
 from services.attendance_service import (
@@ -20,6 +21,21 @@ from services.info_service import (
 )
 
 import sounddevice as sd
+# =====================
+# MoM (Meeting Mode)
+# =====================
+meeting_mode = False
+meeting_transcript = []
+
+
+def is_start_meeting(text: str) -> bool:
+    t = text.lower()
+    return "start meeting" in t
+
+def is_end_meeting(text: str) -> bool:
+    t = text.lower()
+    return "end meeting" in t
+
 
 # ? FORCE BLUETOOTH MIC (IMPORTANT)
 def setup_audio():
@@ -110,22 +126,92 @@ def run_query(cmd_text: str) -> str:
 
     return "Sorry, I didn't understand."
 
+def generate_mom(transcript_list):
+    if not transcript_list:
+        return "No meeting data recorded."
+
+    lines = transcript_list
+
+    key_points = lines[:5]
+    actions = [l for l in lines if "will" in l.lower() or "do" in l.lower()]
+
+    mom = f"Meeting Summary - {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+
+    mom += "Key Points:\n"
+    for kp in key_points:
+        mom += f"- {kp}\n"
+
+    mom += "\nAction Items:\n"
+    for act in actions[:5]:
+        mom += f"- {act}\n"
+
+    mom += "\nSummary:\nDiscussion was recorded and summarized."
+
+    # ✅ Safe save
+    os.makedirs("data", exist_ok=True)
+
+    filename = f"data/meeting_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+
+    with open(filename, "w") as f:
+        f.write(mom)
+
+    return mom
+
 # --------------------
 # Main loop
 # --------------------
 def main():
-    setup_audio()  # ?? IMPORTANT LINE
+    global meeting_mode, meeting_transcript   # ✅ IMPORTANT
+
+    setup_audio()
 
     speak("Buddy query mode ready. Say hey buddy.")
     ai_mode = False
 
     while True:
         wake = listen_whisper(seconds=3)
-        print("?? Heard:", wake)
+        print("👂 Heard:", wake)
 
         if not wake.strip():
             continue
 
+        # =====================
+        # MEETING MODE CONTROL (FIRST)
+        # =====================
+        if is_start_meeting(wake):
+            meeting_mode = True
+            meeting_transcript.clear()
+            speak("Meeting recording started.")
+            continue
+
+        if is_end_meeting(wake):
+            meeting_mode = False
+            speak("Generating meeting summary.")
+
+            mom = generate_mom(meeting_transcript)
+            print("\n===== MOM =====\n", mom)
+
+            speak("Meeting summary is ready.")
+            speak(mom[:500])
+
+            continue
+
+        # =====================
+        # MEETING RECORDING
+        # =====================
+        if meeting_mode:
+            print("📌 Recording meeting content...")
+            meeting_text = listen_whisper(seconds=15)  # ✅ better chunk
+
+            if meeting_text.strip():
+                print("📝 Meeting:", meeting_text)
+                meeting_transcript.append(meeting_text)
+
+            continue
+
+        # =====================
+        # AI MODE
+        # =====================
         if is_ai_mode_trigger(wake):
             ai_mode = True
             speak("AI mode activated. Ask me anything.")
@@ -141,10 +227,13 @@ def main():
             speak(response)
             continue
 
+        # =====================
+        # NORMAL MODE
+        # =====================
         if is_wake_word(wake):
             speak("Yes. Ask your question.")
             cmd = listen_whisper(seconds=5)
-            print("?? Query:", cmd)
+            print("📝 Query:", cmd)
 
             if not cmd.strip():
                 speak("I didn't hear the question.")
@@ -152,7 +241,6 @@ def main():
 
             response = run_query(cmd)
             speak(response)
-
 # --------------------
 # Entry point
 # --------------------

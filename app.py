@@ -2,6 +2,8 @@ from flask import Flask, request
 from dotenv import load_dotenv
 import os
 import requests
+from services.ai_service import get_ai_response
+from datetime import datetime
 
 load_dotenv()
 
@@ -79,15 +81,23 @@ def send_message(to, text):
 
 
 def handle_traitbuddy(text):
-    text = text.lower()
+    text_lower = text.lower()
 
-    if "hi" in text or "hello" in text:
-        return "👋 Hi! I am TRAIT Buddy. How can I help you today?"
+    if "meeting summary" in text_lower:
+        mom_file = "data/meeting_minutes.txt"
+        if os.path.exists(mom_file):
+            with open(mom_file, "r") as f:
+                return f"📄 {f.read()}"
+        return "📄 No meeting summary available yet."
 
-    if "attendance" in text:
+    if "attendance" in text_lower:
         return "📊 Attendance system is active."
 
-    return "🤖 I’m TRAIT Buddy. Try typing *attendance* or *help*."
+    # fallback to AI
+    try:
+        return get_ai_response(text)
+    except:
+        return "🤖 I’m TRAIT Buddy. Try typing *attendance* or *help*."
 
 
 if __name__ == "__main__":
